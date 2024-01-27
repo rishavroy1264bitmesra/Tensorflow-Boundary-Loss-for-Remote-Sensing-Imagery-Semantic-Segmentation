@@ -8,9 +8,9 @@ from tensorflow.python.keras import losses
 from tensorflow.python.keras import models
 
 #Shape of semantic segmentation mask
-OUTPUT_SHAPE = (608, 608, 1)
+# OUTPUT_SHAPE = (608, 608, 1)
 
-def segmentation_boundary_loss(y_true, y_pred):
+def segmentation_boundary_loss(y_true, y_pred, axis = (1, 2), smooth = 1e-5):
     """
     Paper Implemented : https://arxiv.org/abs/1905.07852
     Using Binary Segmentation mask, generates boundary mask on fly and claculates boundary loss.
@@ -18,20 +18,23 @@ def segmentation_boundary_loss(y_true, y_pred):
     :param y_pred:
     :return:
     """
-    y_pred_bd = layers.MaxPooling2D((3, 3), strides=(1, 1), padding='same', input_shape=OUTPUT_SHAPE)(1 - y_pred)
-    y_true_bd = layers.MaxPooling2D((3, 3), strides=(1, 1), padding='same', input_shape=OUTPUT_SHAPE)(1 - y_true)
-    y_pred_bd = y_pred_bd - (1 - y_pred)
-    y_true_bd = y_true_bd - (1 - y_true)
+    InvPred = 1 - y_pred
+    InvTrue = 1 - y_true
+    y_pred_bd = tf.nn.max_pool2d(InvPred, (3, 3), (1, 1), padding = 'SAME' )
+    y_true_bd = tf.nn.max_pool2d(InvTrue, (3, 3), (1, 1), padding = 'SAME' )
 
-    y_pred_bd_ext = layers.MaxPooling2D((5, 5), strides=(1, 1), padding='same', input_shape=OUTPUT_SHAPE)(1 - y_pred)
-    y_true_bd_ext = layers.MaxPooling2D((5, 5), strides=(1, 1), padding='same', input_shape=OUTPUT_SHAPE)(1 - y_true)
-    y_pred_bd_ext = y_pred_bd_ext - (1 - y_pred)
-    y_true_bd_ext = y_true_bd_ext - (1 - y_true)
+    y_pred_bd = y_pred_bd - InvPred
+    y_true_bd = y_true_bd - InvTrue
+        
+    y_pred_bd_ext = tf.nn.max_pool2d(InvPred, (5, 5), (1, 1), padding = 'SAME' )
+    y_true_bd_ext = tf.nn.max_pool2d(InvTrue, (5, 5), (1, 1), padding = 'SAME' )
+    
+    y_pred_bd_ext = y_pred_bd_ext - InvPred
+    y_true_bd_ext = y_true_bd_ext - InvTrue
 
-    P = K.sum(y_pred_bd * y_true_bd_ext) / K.sum(y_pred_bd) + 1e-7
-    R = K.sum(y_true_bd * y_pred_bd_ext) / K.sum(y_true_bd) + 1e-7
-    F1_Score = 2 * P * R / (P + R + 1e-7)
-    # print(f'Precission: {P.eval()}, Recall: {R.eval()}, F1: {F1_Score.eval()}')
-    loss = K.mean(1 - F1_Score)
-    # print(f"Loss:{loss.eval()}")
+    P = tf.reduce_sum(y_pred_bd * y_true_bd_ext, axis = axis) / (tf.reduce_sum(y_pred_bd, axis = axis) + smooth)
+    R = tf.reduce_sum(y_true_bd * y_pred_bd_ext, axis = axis) / (tf.reduce_sum(y_true_bd, axis = axis) + smooth)
+    
+    F1_Score = (2 * P * R) / (P + R + smooth)
+    loss = 1. - F1_Score
     return loss
